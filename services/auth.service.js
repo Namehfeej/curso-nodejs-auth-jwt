@@ -1,11 +1,10 @@
-const UserService = require('./user.service');
 const boom = require('@hapi/boom');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { config } = require('../config/config');
 const nodemailer = require('nodemailer');
 
-
+const UserService = require('./user.service');
 const service = new UserService();
 
 
@@ -23,40 +22,53 @@ class AuthService {
     delete user.dataValues.password;
     return user;
   }
+
+
+  signToken(user) {
+    const payload = {
+      sub: user.id,
+      role: user.role
+    }
+    const token = jwt.sign(payload, config.jwtSecret);
+    res.json({
+      user,
+      token
+    });
+  };
+
+async sendRecovery(email) {
+  const user = await service.findByEmail(email);
+  if (!user) {
+    throw boom.unauthorized();
+  }
+  const payload = { sub: user.id };
+  const token = jwt.sign(payload, config.jwtSecret, {expiresIn: '15min'});
+  const link = `http://myfrontend.com/recovery?token=${token}`;
+  await service.update(user.id, {recoveryToken: token});
+  const mail = {
+    from: config.mailRecov,
+    to: `${user.email}`,
+    subject: "Correo de recuperación de contraseña",
+    html: `<b>Ingresa a este link para recuperar la contraseña => ${link} </b>`,
+  }
+  const rta = await this.sendMail(mail);
+  return rta;
 }
 
-signToken(user) {
-  const payload = {
-    sub: user.id,
-    role: user.role
-  }
-  const token = jwt.sign(payload, config.jwtSecret);
-  res.json({
-    user,
-    token
-  });
-};
-
-async sendMail(email){
+async sendMail(infoMail){
   const transporter = nodemailer.createTransport({
     host: "smtp.gmail.com",
     port: 465,
     secure: true,
     auth: {
-      user: "user-demo@forwardemail.net",
-      pass: "Pass de prueba 123",
+      user: config.mailRecov,
+      pass: config.ssapMail,
     },
   });
 
-  await transporter.sendMail({
-    from: 'user-demo@forwardemail.net',
-    to: `${user.email}`,
-    subject: "Hello ✔",
-    text: "Hello world?",
-    html: "<b>Hello world?</b>",
-  });
+  await transporter.sendMail(infoMail);
   return { message: 'mail sent'}
 }
 
-
+}
 module.exports = AuthService
